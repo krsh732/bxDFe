@@ -616,14 +616,16 @@ static intptr_t CL_CgameSystemCalls( intptr_t *args ) {
 		re.AddAdditiveLightToScene( VMA(1), VMF(2), VMF(3), VMF(4), VMF(5) );
 		return 0;
 	case CG_R_RENDERSCENE:
-		tc_vis_render();
+	{
 		refdef_t *fd = VMA(1);
 		if (!fd->rdflags) {
 			cgamefov[0] = fd->fov_x;
 			cgamefov[1] = fd->fov_y;
+			tc_vis_render();
 		}
-		re.RenderScene( VMA(1) );
+		re.RenderScene(VMA(1));
 		return 0;
+	}
 	case CG_R_SETCOLOR:
 		re.SetColor( VMA(1) );
 		return 0;
