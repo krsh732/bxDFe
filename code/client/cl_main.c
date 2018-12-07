@@ -3787,7 +3787,7 @@ void CL_Init( void ) {
 	CL_InitRef();
 
 	SCR_Init();
-
+	HUD_Init();
 	//Cbuf_Execute ();
 
 	Cvar_Set( "cl_running", "1" );

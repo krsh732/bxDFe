@@ -617,6 +617,11 @@ static intptr_t CL_CgameSystemCalls( intptr_t *args ) {
 		return 0;
 	case CG_R_RENDERSCENE:
 		tc_vis_render();
+		refdef_t *fd = VMA(1);
+		if (!fd->rdflags) {
+			cgamefov[0] = fd->fov_x;
+			cgamefov[1] = fd->fov_y;
+		}
 		re.RenderScene( VMA(1) );
 		return 0;
 	case CG_R_SETCOLOR:
