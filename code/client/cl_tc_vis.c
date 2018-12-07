@@ -1,5 +1,6 @@
 #include "client.h"
 #include "../qcommon/cm_local.h"
+#include "../qcommon/cm_patch.h"
 
 static qhandle_t bboxShader;
 static qhandle_t bboxShader_nocull;
@@ -40,6 +41,13 @@ void tc_vis_render(void) {
 			if (brush->contents & CONTENTS_PLAYERCLIP) {
 				vec4_t color = { 255, 0, 0, 255 };
 				R_DrawBBox(vec3_origin, brush->bounds[0], brush->bounds[1], color);
+			}
+		}
+		for (int i = 0; i < cm.numSurfaces; i++) {
+			cPatch_t *patch = cm.surfaces[i];
+			if (patch && patch->contents & CONTENTS_PLAYERCLIP) {
+				vec4_t color = { 255, 0, 0, 255 };
+				R_DrawBBox(vec3_origin, patch->pc->bounds[0], patch->pc->bounds[1], color);
 			}
 		}
 	}
