@@ -511,11 +511,11 @@ void CL_ConsolePrint( const char *txt ) {
 
 	// iodfe
 	if (con.x == 0 && con_timestamp && con_timestamp->integer) {
-		char txtt[MAXPRINTMSG];
+		char txtt[MAXPRINTMSG + 15]; // additional space for timestamp
 		qtime_t	now;
 		Com_RealTime(&now);
 		Com_sprintf(txtt, sizeof(txtt), "^9%02d:%02d:%02d ^7%s", now.tm_hour, now.tm_min, now.tm_sec, txt);
-		strcpy(txt, txtt);
+		txt = txtt;
 	}
 
 	// TTimo - prefix for text that shows up in console but not in notify
