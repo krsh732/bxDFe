@@ -253,7 +253,7 @@ else # ifeq Linux
 #############################################################################
 
 ifdef MINGW
- 
+
   ifeq ($(CROSS_COMPILING),1)
     # If CC is already set to something generic, we probably want to use
     # something more specific
@@ -640,6 +640,7 @@ Q3OBJ = \
   $(B)/client/cl_scrn.o \
   $(B)/client/cl_ui.o \
   $(B)/client/cl_avi.o \
+  $(B)/client/cl_tc_vis.o \
   \
   $(B)/client/cm_load.o \
   $(B)/client/cm_patch.o \

@@ -579,6 +579,12 @@ void CL_WriteAVIAudioFrame( const byte *pcmBuffer, int size );
 qboolean CL_CloseAVI( void );
 qboolean CL_VideoRecording( void );
 
+//
+// cl_tc_vis.c
+//
+void tc_vis_init(void);
+void tc_vis_render(void);
+
 // platform-specific
 void	GLimp_Init( glconfig_t *config );
 void	GLimp_Shutdown( qboolean unloadDLL );
