@@ -15,8 +15,8 @@ static void parse_triggers(char *entities);
 static void R_DrawBBox(vec3_t origin, vec3_t mins, vec3_t maxs, vec4_t color);
 
 void tc_vis_init(void) {
-	bboxShader = re.RegisterShader("bbox");
-	bboxShader_nocull = re.RegisterShader("bbox_nocull");
+	bboxShader = re.RegisterShader("tcRenderShader");
+	bboxShader_nocull = re.RegisterShader("tcRenderShader_nocull");
 
 	trigger_draw = Cvar_Get("bxdfe_triggers_draw", "0", CVAR_ARCHIVE);
 	clips_draw = Cvar_Get("bxdfe_clips_draw", "0", CVAR_ARCHIVE);
