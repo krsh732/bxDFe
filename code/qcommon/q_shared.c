@@ -1629,7 +1629,7 @@ int QDECL Com_sprintf( char *dest, int size, const char *fmt, ...)
 
 	if ( len >= size ) 
 	{
-		Com_Printf( S_COLOR_YELLOW "Com_sprintf: overflow of %i in %i\n", len, size );
+		Com_DPrintf( S_COLOR_YELLOW "Com_sprintf: overflow of %i in %i\n", len, size );
 #if	defined(_DEBUG) && defined(_WIN32)
 		DebugBreak();
 #endif
@@ -2011,7 +2011,7 @@ qboolean Info_SetValueForKey_s( char *s, int slen, const char *key, const char *
 
 	if ( len1 + len2 >= slen )
 	{
-		Com_Printf( S_COLOR_YELLOW "Info string length exceeded for key '%s'\n", key );
+		Com_DPrintf( S_COLOR_YELLOW "Info string length exceeded for key '%s'\n", key );
 		return qfalse;
 	}
 

@@ -834,6 +834,7 @@ int Info_RemoveKey( char *s, const char *key );
 // this is only here so the functions in q_shared.c and bg_*.c can link
 void	QDECL Com_Error( errorParm_t level, const char *fmt, ... ) __attribute__ ((noreturn, format (printf, 2, 3)));
 void	QDECL Com_Printf( const char *msg, ... ) __attribute__ ((format (printf, 1, 2)));
+void	QDECL Com_DPrintf(const char *msg, ...) __attribute__((format(printf, 1, 2)));
 
 
 /*
