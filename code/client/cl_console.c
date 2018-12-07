@@ -69,6 +69,7 @@ extern  int         chat_playerNum;
 
 console_t	con;
 
+cvar_t		*con_timestamp;
 cvar_t		*con_conspeed;
 cvar_t		*con_notifytime;
 
@@ -381,6 +382,7 @@ Con_Init
 */
 void Con_Init( void ) 
 {
+	con_timestamp = Cvar_Get("con_timestamp", "1", CVAR_ARCHIVE);
 	con_notifytime = Cvar_Get( "con_notifytime", "3", 0 );
 	con_conspeed = Cvar_Get( "scr_conspeed", "3", 0 );
 
@@ -506,6 +508,15 @@ void CL_ConsolePrint( const char *txt ) {
 	int		colorIndex;
 	qboolean skipnotify = qfalse;		// NERVE - SMF
 	int prev;							// NERVE - SMF
+
+	// iodfe
+	if (con.x == 0 && con_timestamp && con_timestamp->integer) {
+		char txtt[MAXPRINTMSG];
+		qtime_t	now;
+		Com_RealTime(&now);
+		Com_sprintf(txtt, sizeof(txtt), "^9%02d:%02d:%02d ^7%s", now.tm_hour, now.tm_min, now.tm_sec, txt);
+		strcpy(txt, txtt);
+	}
 
 	// TTimo - prefix for text that shows up in console but not in notify
 	// backported from RTCW
@@ -662,7 +673,7 @@ void Con_DrawNotify( void )
 			continue;
 		}
 
-		for (x = 0 ; x < con.linewidth ; x++) {
+		for (x = con_timestamp->integer ? 9 : 0; x < con.linewidth ; x++) {
 			if ( ( text[x] & 0xff ) == ' ' ) {
 				continue;
 			}
@@ -671,7 +682,7 @@ void Con_DrawNotify( void )
 				currentColorIndex = colorIndex;
 				re.SetColor( g_color_table[ colorIndex ] );
 			}
-			SCR_DrawSmallChar( cl_conXOffset->integer + con.xadjust + (x+1)*smallchar_width, v, text[x] & 0xff );
+			SCR_DrawSmallChar(cl_conXOffset->integer + con.xadjust + (x + 1 - (con_timestamp->integer ? 9 : 0))*smallchar_width, v, text[x] & 0xff);
 		}
 
 		v += smallchar_height;
