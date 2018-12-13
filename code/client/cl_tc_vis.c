@@ -2,59 +2,80 @@
 #include "../qcommon/cm_local.h"
 #include "../qcommon/cm_patch.h"
 
-static qhandle_t bboxShader;
-static qhandle_t bboxShader_nocull;
+// if you dare to exceed this...
+#define MAX_FACE_VERTS 64
 
-static qboolean trigger[MAX_SUBMODELS];
+typedef struct {
+	int numVerts;
+	polyVert_t *verts;
+} visFace_t;
+
+typedef struct visBrushNode_s {
+	qhandle_t shader;
+
+	int numFaces;
+	visFace_t *faces;
+
+	// This is a linked list.
+	// Why? I dont know.
+	// Let me know if you do.
+	struct visBrushNode_s *next;
+} visBrushNode_t;
+
+
+static void add_triggers(void);
+static void add_clips(void);
+static void gen_visible_brush(int brushnum, vec4_t color, qhandle_t shader);
+static qboolean intersect_planes(cplane_t *p1, cplane_t *p2, cplane_t *p3, vec3_t p);
+static qboolean point_in_brush(vec3_t point, cbrush_t *brush);
+static int winding_cmp(const void *a, const void *b);
+static void add_vert_to_face(visFace_t *face, vec3_t vert, vec4_t color, vec2_t tex_coords);
+static float *get_uv_coords(vec2_t uv, vec3_t vert, vec3_t normal);
+static void free_vis_brushes(visBrushNode_t *brushes);
+
+
+static visBrushNode_t *head = NULL;
+
+/* needed for winding_cmp */
+static vec3_t w_center, w_normal, w_ref_vec;
+static float w_ref_vec_len;
 
 static cvar_t *trigger_draw;
 static cvar_t *clips_draw;
 
+static qhandle_t trigger_shader;
+static qhandle_t clip_shader;
 
-static void parse_triggers(char *entities);
-static void R_DrawBBox(vec3_t origin, vec3_t mins, vec3_t maxs, vec4_t color);
+static vec4_t trigger_color = { 0, 128, 0, 255 };
+static vec4_t clip_color = { 128, 0, 0, 255 };
 
 void tc_vis_init(void) {
-	bboxShader = re.RegisterShader("tcRenderShader");
-	bboxShader_nocull = re.RegisterShader("tcRenderShader_nocull");
+	free_vis_brushes(head);
+	head = NULL;
 
 	trigger_draw = Cvar_Get("bxdfe_triggers_draw", "0", CVAR_ARCHIVE);
 	clips_draw = Cvar_Get("bxdfe_clips_draw", "0", CVAR_ARCHIVE);
 
-	memset(&trigger, 0, sizeof(trigger));
-	parse_triggers(cm.entityString);
+	trigger_shader = re.RegisterShader("tcRenderShader_nocull");
+	clip_shader = re.RegisterShader("tcRenderShader_nocull");
+
+	add_triggers();
+	add_clips();
 }
 
 void tc_vis_render(void) {
-	if (trigger_draw->integer) {
-		for (int i = 0; i < cm.numSubModels; i++) {
-			if (trigger[i]) {
-				vec4_t color = { 0, 128, 0, 255 };
-				R_DrawBBox(vec3_origin, cm.cmodels[i].mins, cm.cmodels[i].maxs, color);
-			}
+	visBrushNode_t *brush = head;
+	while (brush) {
+		for (int i = 0; i < brush->numFaces; i++) {
+			re.AddPolyToScene(brush->shader, brush->faces[i].numVerts, brush->faces[i].verts, 1);
 		}
-	}
-	
-	if (clips_draw->integer) {
-		for (int i = 0; i < cm.numBrushes; i++) {
-			cbrush_t *brush = &cm.brushes[i];
-			if (brush->contents & CONTENTS_PLAYERCLIP) {
-				vec4_t color = { 255, 0, 0, 255 };
-				R_DrawBBox(vec3_origin, brush->bounds[0], brush->bounds[1], color);
-			}
-		}
-		for (int i = 0; i < cm.numSurfaces; i++) {
-			cPatch_t *patch = cm.surfaces[i];
-			if (patch && patch->contents & CONTENTS_PLAYERCLIP) {
-				vec4_t color = { 255, 0, 0, 255 };
-				R_DrawBBox(vec3_origin, patch->pc->bounds[0], patch->pc->bounds[1], color);
-			}
-		}
+		brush = brush->next;
 	}
 }
 
 // ripped from breadsticks
-static void parse_triggers(char *entities) {
+static void add_triggers(void) {
+	char *entities = cm.entityString;
 	for (;; ) {
 		qboolean is_trigger = qfalse;
 		int model = -1;
@@ -85,97 +106,169 @@ static void parse_triggers(char *entities) {
 		}
 
 		if (is_trigger && model > 0) {
-			trigger[model] = qtrue;
+			cLeaf_t *leaf = &cm.cmodels[model].leaf;
+			for (int i = 0; i < leaf->numLeafBrushes; i++) {
+				gen_visible_brush(cm.leafbrushes[leaf->firstLeafBrush + i], trigger_color, trigger_shader);
+			}
 		}
 	}
 }
 
-// ripped from breadsticks
-static void R_DrawBBox(vec3_t origin, vec3_t mins, vec3_t maxs, vec4_t color) {
-	int i;
-	float extx, exty, extz;
-	polyVert_t verts[4];
-	vec3_t corners[8];
+static void add_clips(void) {
+	for (int i = 0; i < cm.numBrushes; i++) {
+		cbrush_t *brush = &cm.brushes[i];
+		if (brush->contents & CONTENTS_PLAYERCLIP) {
+			gen_visible_brush(i, clip_color, clip_shader);
+		}
+	}
+}
 
-	// get the extents (size)
-	extx = maxs[0] - mins[0];
-	exty = maxs[1] - mins[1];
-	extz = maxs[2] - mins[2];
-
-	// set the polygon's texture coordinates
-	verts[0].st[0] = 0;
-	verts[0].st[1] = 0;
-	verts[1].st[0] = 0;
-	verts[1].st[1] = 1;
-	verts[2].st[0] = 1;
-	verts[2].st[1] = 1;
-	verts[3].st[0] = 1;
-	verts[3].st[1] = 0;
-
-	// set the polygon's vertex colors
-	for (i = 0; i < 4; i++) {
-		//memcpy( verts[i].modulate, color, sizeof(verts[i].modulate) );
-		verts[i].modulate[0] = color[0];
-		verts[i].modulate[1] = color[1];
-		verts[i].modulate[2] = color[2];
-		verts[i].modulate[3] = color[3];
+static void gen_visible_brush(int brushnum, vec4_t color, qhandle_t shader) {
+	cbrush_t *brush = &cm.brushes[brushnum];
+	visBrushNode_t *node = malloc(sizeof(visBrushNode_t));
+	node->shader = shader;
+	node->numFaces = brush->numsides;
+	node->faces = malloc(node->numFaces * sizeof(visFace_t));
+	for (int i = 0; i < node->numFaces; i++) {
+		node->faces[i].numVerts = 0;
+		node->faces[i].verts = malloc(MAX_FACE_VERTS * sizeof(polyVert_t));
 	}
 
-	VectorAdd(origin, maxs, corners[3]);
+	for (int i = 0; i < brush->numsides; i++) {
+		cplane_t *p1 = brush->sides[i].plane;
+		for (int j = i+1; j < brush->numsides; j++) {
+			cplane_t *p2 = brush->sides[j].plane;
+			for (int k = j+1; k < brush->numsides; k++) {				
+				vec3_t p;
+				cplane_t *p3 = brush->sides[k].plane;
+				if (!intersect_planes(p1, p2, p3, p))
+					continue;
+				
+				if (!point_in_brush(p, brush))
+					continue;
 
-	VectorCopy(corners[3], corners[2]);
-	corners[2][0] -= extx;
-
-	VectorCopy(corners[2], corners[1]);
-	corners[1][1] -= exty;
-
-	VectorCopy(corners[1], corners[0]);
-	corners[0][0] += extx;
-
-	for (i = 0; i < 4; i++) {
-		VectorCopy(corners[i], corners[i + 4]);
-		corners[i + 4][2] -= extz;
+				vec2_t uv;
+				add_vert_to_face(&node->faces[i], p, color, get_uv_coords(uv, p, p1->normal));
+				add_vert_to_face(&node->faces[j], p, color, get_uv_coords(uv, p, p2->normal));
+				add_vert_to_face(&node->faces[k], p, color, get_uv_coords(uv, p, p3->normal));
+			}
+		}
 	}
 
-	// top
-	VectorCopy(corners[0], verts[0].xyz);
-	VectorCopy(corners[1], verts[1].xyz);
-	VectorCopy(corners[2], verts[2].xyz);
-	VectorCopy(corners[3], verts[3].xyz);
-	re.AddPolyToScene(bboxShader, 4, verts, 1);
+	// winding
+	for (int i = 0; i < brush->numsides; i++) {
+		visFace_t *face = &node->faces[i];
+		VectorCopy(brush->sides[i].plane->normal, w_normal);
+		VectorClear(w_center);
+		for (int j = 0; j < face->numVerts; j++)
+			VectorAdd(w_center, face->verts[j].xyz, w_center);
+		VectorScale(w_center, 1.0f / face->numVerts, w_center);
+		VectorSubtract(face->verts[0].xyz, w_center, w_ref_vec);
+		w_ref_vec_len = VectorLength(w_ref_vec);
+		qsort(face->verts, face->numVerts, sizeof(face->verts[0]), winding_cmp);
+	}
 
-	// bottom
-	VectorCopy(corners[7], verts[0].xyz);
-	VectorCopy(corners[6], verts[1].xyz);
-	VectorCopy(corners[5], verts[2].xyz);
-	VectorCopy(corners[4], verts[3].xyz);
-	re.AddPolyToScene(bboxShader, 4, verts, 1);
+	node->next = head;
+	head = node;
+}
 
-	// top side
-	VectorCopy(corners[3], verts[0].xyz);
-	VectorCopy(corners[2], verts[1].xyz);
-	VectorCopy(corners[6], verts[2].xyz);
-	VectorCopy(corners[7], verts[3].xyz);
-	re.AddPolyToScene(bboxShader_nocull, 4, verts, 1);
+static qboolean intersect_planes(cplane_t *p1, cplane_t *p2, cplane_t *p3, vec3_t p) {
+	// thanks Real-Time Collision Detection
+	vec3_t u, v;
+	CrossProduct(p2->normal, p3->normal, u);
+	float denom = DotProduct(p1->normal, u);
+	if (fabs(denom) < 1e-5)
+		return qfalse;
+	
+	for (int i = 0; i < 3; i++)
+		p[i] = p3->dist * p2->normal[i] - p2->dist * p3->normal[i];
 
-	// left side
-	VectorCopy(corners[2], verts[0].xyz);
-	VectorCopy(corners[1], verts[1].xyz);
-	VectorCopy(corners[5], verts[2].xyz);
-	VectorCopy(corners[6], verts[3].xyz);
-	re.AddPolyToScene(bboxShader_nocull, 4, verts, 1);
+	CrossProduct(p1->normal, p, v);
+	VectorMA(v, p1->dist, u, p);
+	VectorScale(p, 1.0f / denom, p);
+	return qtrue;
+}
 
-	// right side
-	VectorCopy(corners[0], verts[0].xyz);
-	VectorCopy(corners[3], verts[1].xyz);
-	VectorCopy(corners[7], verts[2].xyz);
-	VectorCopy(corners[4], verts[3].xyz);
-	re.AddPolyToScene(bboxShader_nocull, 4, verts, 1);
+static qboolean point_in_brush(vec3_t point, cbrush_t *brush) {
+	for (int i = 0; i < brush->numsides; i++) {
+		float d = DotProduct(point, brush->sides[i].plane->normal);
+		if (d - brush->sides[i].plane->dist > PLANE_TRI_EPSILON)
+			return qfalse;
+	}
+	return qtrue;
+}
 
-	// bottom side
-	VectorCopy(corners[1], verts[0].xyz);
-	VectorCopy(corners[0], verts[1].xyz);
-	VectorCopy(corners[4], verts[2].xyz);
-	VectorCopy(corners[5], verts[3].xyz);
-	re.AddPolyToScene(bboxShader_nocull, 4, verts, 1);
+// This function was initially supposed to obtain the ccw angle from w_ref_vec
+// for ac and bc and compare them. However, we don't really need the exact angle.
+// We just need to know which point lies further ccw relative to the ref.
+// So a linear substitute is instead used to preserve the monotone decrease of acos.
+static int winding_cmp(const void *a, const void *b) {
+	vec3_t ac, bc, n1, n2;
+
+	VectorSubtract(((polyVert_t *)a)->xyz, w_center, ac);
+	VectorSubtract(((polyVert_t *)b)->xyz, w_center, bc);
+
+	float proj_ac = DotProduct(ac, w_ref_vec) / VectorLength(ac);
+	float proj_bc = DotProduct(bc, w_ref_vec) / VectorLength(bc);
+
+	float a_diff = w_ref_vec_len - proj_ac;
+	float b_diff  = w_ref_vec_len - proj_bc;
+
+	// todo: get rid of cross products
+	CrossProduct(ac, w_ref_vec, n1);
+	CrossProduct(bc, w_ref_vec, n2);
+
+	if (DotProduct(n1, w_normal) < 0)
+		a_diff = 4.f * w_ref_vec_len - a_diff;
+	if (DotProduct(n2, w_normal) < 0)
+		b_diff = 4.f * w_ref_vec_len - b_diff;
+
+	if (a_diff < b_diff)
+		return -1;
+	if (a_diff > b_diff)
+		return 1;
+
+	return 0;
+}
+
+static void add_vert_to_face(visFace_t *face, vec3_t vert, vec4_t color, vec2_t tex_coords) {
+	if (face->numVerts >= MAX_FACE_VERTS)
+		return;
+
+	VectorCopy(vert, face->verts[face->numVerts].xyz);
+	Vector4Copy(color, face->verts[face->numVerts].modulate);
+	face->verts[face->numVerts].st[0] = tex_coords[0];
+	face->verts[face->numVerts].st[1] = tex_coords[1];
+	face->numVerts++;
+}
+
+static float *get_uv_coords(vec2_t uv, vec3_t vert, vec3_t normal) {
+	float x = abs(normal[0]), y = abs(normal[1]), z = abs(normal[2]);
+	if (x >= y && x >= z) {
+		uv[0] = -vert[1] / 32.f;
+		uv[1] = -vert[2] / 32.f;
+	}
+	else if (y > x && y >= z) {
+		uv[0] = -vert[0] / 32.f;
+		uv[1] = -vert[2] / 32.f;
+	}
+	else {
+		uv[0] = -vert[0] / 32.f;
+		uv[1] = -vert[1] / 32.f;
+	}
+
+	return uv;
+}
+
+static void free_vis_brushes(visBrushNode_t *brushes) {
+	// beautiful design choices, nice recursion!!!
+	if (!brushes)
+		return;
+
+	free_vis_brushes(brushes->next);
+	for (int i = 0; i < brushes->numFaces; i++)
+		free(brushes->faces[i].verts);
+
+	free(brushes->faces);
+	free(brushes);
 }
