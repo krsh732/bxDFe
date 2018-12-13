@@ -1,3 +1,8 @@
+/*
+* Huge thanks to breadsticks! Wouldn't have been able to do any of this
+* without his patience nor guidance.
+*/
+
 #include "client.h"
 #include "../qcommon/cm_local.h"
 #include "../qcommon/cm_patch.h"
@@ -5,12 +10,15 @@
 // if you dare to exceed this...
 #define MAX_FACE_VERTS 64
 
+typedef enum {TRIGGER_BRUSH, CLIP_BRUSH} visBrushType_t;
+
 typedef struct {
 	int numVerts;
 	polyVert_t *verts;
 } visFace_t;
 
 typedef struct visBrushNode_s {
+	visBrushType_t type;
 	qhandle_t shader;
 
 	int numFaces;
@@ -25,7 +33,7 @@ typedef struct visBrushNode_s {
 
 static void add_triggers(void);
 static void add_clips(void);
-static void gen_visible_brush(int brushnum, vec4_t color, qhandle_t shader);
+static void gen_visible_brush(int brushnum, visBrushType_t type, vec4_t color, qhandle_t shader);
 static qboolean intersect_planes(cplane_t *p1, cplane_t *p2, cplane_t *p3, vec3_t p);
 static qboolean point_in_brush(vec3_t point, cbrush_t *brush);
 static int winding_cmp(const void *a, const void *b);
@@ -40,7 +48,7 @@ static visBrushNode_t *head = NULL;
 static vec3_t w_center, w_normal, w_ref_vec;
 static float w_ref_vec_len;
 
-static cvar_t *trigger_draw;
+static cvar_t *triggers_draw;
 static cvar_t *clips_draw;
 
 static qhandle_t trigger_shader;
@@ -53,7 +61,7 @@ void tc_vis_init(void) {
 	free_vis_brushes(head);
 	head = NULL;
 
-	trigger_draw = Cvar_Get("bxdfe_triggers_draw", "0", CVAR_ARCHIVE);
+	triggers_draw = Cvar_Get("bxdfe_triggers_draw", "0", CVAR_ARCHIVE);
 	clips_draw = Cvar_Get("bxdfe_clips_draw", "0", CVAR_ARCHIVE);
 
 	trigger_shader = re.RegisterShader("tcRenderShader_nocull");
@@ -66,8 +74,11 @@ void tc_vis_init(void) {
 void tc_vis_render(void) {
 	visBrushNode_t *brush = head;
 	while (brush) {
-		for (int i = 0; i < brush->numFaces; i++) {
-			re.AddPolyToScene(brush->shader, brush->faces[i].numVerts, brush->faces[i].verts, 1);
+		if (brush->type == TRIGGER_BRUSH && triggers_draw->integer
+			|| brush->type == CLIP_BRUSH && clips_draw->integer)
+		{
+			for (int i = 0; i < brush->numFaces; i++)
+				re.AddPolyToScene(brush->shader, brush->faces[i].numVerts, brush->faces[i].verts, 1);
 		}
 		brush = brush->next;
 	}
@@ -108,7 +119,7 @@ static void add_triggers(void) {
 		if (is_trigger && model > 0) {
 			cLeaf_t *leaf = &cm.cmodels[model].leaf;
 			for (int i = 0; i < leaf->numLeafBrushes; i++) {
-				gen_visible_brush(cm.leafbrushes[leaf->firstLeafBrush + i], trigger_color, trigger_shader);
+				gen_visible_brush(cm.leafbrushes[leaf->firstLeafBrush + i], TRIGGER_BRUSH, trigger_color, trigger_shader);
 			}
 		}
 	}
@@ -118,14 +129,15 @@ static void add_clips(void) {
 	for (int i = 0; i < cm.numBrushes; i++) {
 		cbrush_t *brush = &cm.brushes[i];
 		if (brush->contents & CONTENTS_PLAYERCLIP) {
-			gen_visible_brush(i, clip_color, clip_shader);
+			gen_visible_brush(i, CLIP_BRUSH, clip_color, clip_shader);
 		}
 	}
 }
 
-static void gen_visible_brush(int brushnum, vec4_t color, qhandle_t shader) {
+static void gen_visible_brush(int brushnum, visBrushType_t type, vec4_t color, qhandle_t shader) {
 	cbrush_t *brush = &cm.brushes[brushnum];
 	visBrushNode_t *node = malloc(sizeof(visBrushNode_t));
+	node->type = type;
 	node->shader = shader;
 	node->numFaces = brush->numsides;
 	node->faces = malloc(node->numFaces * sizeof(visFace_t));
@@ -261,7 +273,7 @@ static float *get_uv_coords(vec2_t uv, vec3_t vert, vec3_t normal) {
 }
 
 static void free_vis_brushes(visBrushNode_t *brushes) {
-	// beautiful design choices, nice recursion!!!
+	// one day this will be iterative?
 	if (!brushes)
 		return;
 
