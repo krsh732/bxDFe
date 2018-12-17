@@ -24,6 +24,7 @@ Foundation, Inc., 51 Franklin St, Fifth Floor, Boston, MA  02110-1301  USA
 cvar_t		*scr_hud_snap_draw;
 cvar_t		*scr_hud_snap_rgba1;
 cvar_t		*scr_hud_snap_rgba2;
+cvar_t		*scr_hud_snap_rgba3;
 cvar_t		*scr_hud_snap_y;
 cvar_t		*scr_hud_snap_h;
 cvar_t		*scr_hud_snap_auto;
@@ -64,6 +65,17 @@ void HUD_UpdateSnappingSettings(float speed) {
 	cl.snappinghud.promode = atoi(Info_ValueForKey(info, "df_promode"));
 }
 
+static qboolean in_angle_interval(float angle, float start, float end) {
+	angle = AngleNormalize360(angle);
+	start = AngleNormalize360(start);
+	end = AngleNormalize360(end);
+
+	if (start < end)
+		return start <= angle && angle <= end;
+	else
+		return start <= angle || angle <= end;
+}
+
 /*
 ==============
 HUD_DrawSnapping
@@ -75,6 +87,7 @@ void HUD_DrawSnapping(float yaw) {
 	vec4_t	color[3];
 	float speed;
 	int colorid = 0;
+	float offset = 0.f;
 
 	if (cl.snap.ps.pm_flags & PMF_FOLLOW || clc.demoplaying) {
 		cl.snappinghud.m[0] = (cl.snap.ps.stats[13] & 1) - (cl.snap.ps.stats[13] & 2);
@@ -94,31 +107,25 @@ void HUD_DrawSnapping(float yaw) {
 
 	switch (scr_hud_snap_auto->integer) {
 	case 0:
-		yaw += scr_hud_snap_def->value;
+		offset += scr_hud_snap_def->value;
 		break;
 	case 1:
 		if (cl.snappinghud.promode || (cl.snappinghud.m[0] != 0 && cl.snappinghud.m[1] != 0)) {
-			yaw += 45;
+			offset += 45;
 		}
 		else if (cl.snappinghud.m[0] == 0 && cl.snappinghud.m[1] == 0) {
-			yaw += scr_hud_snap_def->value;
+			offset += scr_hud_snap_def->value;
 		}
 		break;
 	case 2:
 		if (cl.snappinghud.m[0] != 0 && cl.snappinghud.m[1] != 0) {
-			yaw += 45;
+			offset += 45;
 		}
 		else if (cl.snappinghud.m[0] == 0 && cl.snappinghud.m[1] == 0) {
-			yaw += scr_hud_snap_def->value;
+			offset += scr_hud_snap_def->value;
 		}
 		break;
 	}
-
-	t = scr_hud_snap_rgba2->string;
-	color[1][0] = atof(COM_Parse(&t));
-	color[1][1] = atof(COM_Parse(&t));
-	color[1][2] = atof(COM_Parse(&t));
-	color[1][3] = atof(COM_Parse(&t));
 
 	t = scr_hud_snap_rgba1->string;
 	color[0][0] = atof(COM_Parse(&t));
@@ -126,9 +133,33 @@ void HUD_DrawSnapping(float yaw) {
 	color[0][2] = atof(COM_Parse(&t));
 	color[0][3] = atof(COM_Parse(&t));
 
+	t = scr_hud_snap_rgba2->string;
+	color[1][0] = atof(COM_Parse(&t));
+	color[1][1] = atof(COM_Parse(&t));
+	color[1][2] = atof(COM_Parse(&t));
+	color[1][3] = atof(COM_Parse(&t));
+
+	t = scr_hud_snap_rgba3->string;
+	color[2][0] = atof(COM_Parse(&t));
+	color[2][1] = atof(COM_Parse(&t));
+	color[2][2] = atof(COM_Parse(&t));
+	color[2][3] = atof(COM_Parse(&t));
+
 	for (i = 0; i<cl.snappinghud.count; i++) {
-		SCR_FillAngleYaw(cl.snappinghud.zones[i], cl.snappinghud.zones[i + 1], yaw, y, h, color[colorid]);
-		SCR_FillAngleYaw(cl.snappinghud.zones[i] + 90, cl.snappinghud.zones[i + 1] + 90, yaw, y, h, color[colorid]);
+		float start = cl.snappinghud.zones[i];
+		float end = cl.snappinghud.zones[i + 1];
+		float look = 90 + offset - yaw;
+
+		if (colorid == 0 && (in_angle_interval(look, start, end) || in_angle_interval(look, start + 180, end + 180)))
+			SCR_FillAngleYaw(cl.snappinghud.zones[i], cl.snappinghud.zones[i + 1], yaw + offset, y, h, color[2]);
+		else
+			SCR_FillAngleYaw(cl.snappinghud.zones[i], cl.snappinghud.zones[i + 1], yaw + offset, y, h, color[colorid]);
+
+		if (colorid == 0 && (in_angle_interval(look + 90, start, end) || in_angle_interval(look + 90, start + 180, end + 180)))
+			SCR_FillAngleYaw(cl.snappinghud.zones[i] + 90, cl.snappinghud.zones[i + 1] + 90, yaw + offset, y, h, color[2]);
+		else
+			SCR_FillAngleYaw(cl.snappinghud.zones[i] + 90, cl.snappinghud.zones[i + 1] + 90, yaw + offset, y, h, color[colorid]);
+
 		colorid ^= 1;
 	}
 }
@@ -197,6 +228,7 @@ void HUD_Init(void) {
 	scr_hud_snap_draw = Cvar_Get("scr_hud_snap_draw", "0", CVAR_ARCHIVE);
 	scr_hud_snap_rgba1 = Cvar_Get("scr_hud_snap_rgba1", ".02 .1 .02 .4", CVAR_ARCHIVE);
 	scr_hud_snap_rgba2 = Cvar_Get("scr_hud_snap_rgba2", ".05 .05 .05 .1", CVAR_ARCHIVE);
+	scr_hud_snap_rgba3 = Cvar_Get("scr_hud_snap_rgba3", ".98 .9 .98 .4", CVAR_ARCHIVE);
 	scr_hud_snap_y = Cvar_Get("scr_hud_snap_y", "248", CVAR_ARCHIVE);
 	scr_hud_snap_h = Cvar_Get("scr_hud_snap_h", "8", CVAR_ARCHIVE);
 	scr_hud_snap_auto = Cvar_Get("scr_hud_snap_auto", "1", CVAR_ARCHIVE);
