@@ -33,7 +33,7 @@ typedef struct visBrushNode_s {
 
 static void add_triggers(void);
 static void add_clips(void);
-static void gen_visible_brush(int brushnum, visBrushType_t type, vec4_t color, qhandle_t shader);
+static void gen_visible_brush(int brushnum, vec3_t origin, visBrushType_t type, vec4_t color, qhandle_t shader);
 static qboolean intersect_planes(cplane_t *p1, cplane_t *p2, cplane_t *p3, vec3_t p);
 static qboolean point_in_brush(vec3_t point, cbrush_t *brush);
 static int winding_cmp(const void *a, const void *b);
@@ -90,6 +90,8 @@ static void add_triggers(void) {
 	for (;; ) {
 		qboolean is_trigger = qfalse;
 		int model = -1;
+		vec3_t origin;
+		VectorCopy(vec3_origin, origin);
 
 		char *token = COM_Parse(&entities);
 		if (!entities)
@@ -114,12 +116,17 @@ static void add_triggers(void) {
 				token = COM_Parse(&entities);
 				is_trigger = !!Q_stristr(token, "trigger");
 			}
+
+			if (!Q_stricmp(token, "origin")) {
+				token = COM_Parse(&entities);
+				sscanf(token, "%f %f %f", &origin[0], &origin[1], &origin[2]);
+			}
 		}
 
 		if (is_trigger && model > 0) {
 			cLeaf_t *leaf = &cm.cmodels[model].leaf;
 			for (int i = 0; i < leaf->numLeafBrushes; i++) {
-				gen_visible_brush(cm.leafbrushes[leaf->firstLeafBrush + i], TRIGGER_BRUSH, trigger_color, trigger_shader);
+				gen_visible_brush(cm.leafbrushes[leaf->firstLeafBrush + i], origin, TRIGGER_BRUSH, trigger_color, trigger_shader);
 			}
 		}
 	}
@@ -129,12 +136,12 @@ static void add_clips(void) {
 	for (int i = 0; i < cm.numBrushes; i++) {
 		cbrush_t *brush = &cm.brushes[i];
 		if (brush->contents & CONTENTS_PLAYERCLIP) {
-			gen_visible_brush(i, CLIP_BRUSH, clip_color, clip_shader);
+			gen_visible_brush(i, vec3_origin, CLIP_BRUSH, clip_color, clip_shader);
 		}
 	}
 }
 
-static void gen_visible_brush(int brushnum, visBrushType_t type, vec4_t color, qhandle_t shader) {
+static void gen_visible_brush(int brushnum, vec3_t origin, visBrushType_t type, vec4_t color, qhandle_t shader) {
 	cbrush_t *brush = &cm.brushes[brushnum];
 	visBrushNode_t *node = malloc(sizeof(visBrushNode_t));
 	node->type = type;
@@ -158,6 +165,10 @@ static void gen_visible_brush(int brushnum, visBrushType_t type, vec4_t color, q
 				
 				if (!point_in_brush(p, brush))
 					continue;
+
+				// translate point to be relative to provided origin
+				// looking at you FM
+				VectorAdd(p, origin, p);
 
 				vec2_t uv;
 				add_vert_to_face(&node->faces[i], p, color, get_uv_coords(uv, p, p1->normal));
