@@ -1,3 +1,10 @@
+# 👉 Deprecated! Please use [oDFe](https://github.com/jbustos22/odfe) 👈
+This repository is deprecated. Please use [oDFe](https://github.com/jbustos22/odfe), as it:
+- Also renders slick surfaces
+- Improves memory usage and performance (ie. culling)
+- Is actively maintained
+- It's made to be actually used by people
+
 # bxDFe
 A proof-of-concept fork of Quake3e to primarily display triggers and invisible clips due to requests.
 
